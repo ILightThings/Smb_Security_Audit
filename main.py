@@ -27,6 +27,11 @@ class AuditTarget:
         self.NBDomain = ""
         self.DNSName = ""
         self.DNSDomain = ""
+        self.NTLMSupport = True
+
+
+    def print(self):
+        print(self.__dict__)
 
     """
     Will test will all possible SMB Dialects.
@@ -38,7 +43,7 @@ class AuditTarget:
             self.canConnect = True
             if type(smbconn._SMBConnection ) == smb3.SMB3:
                 #smbconn.negotiateSession()
-                #smbconn.login(user="",password="")
+                
                 flags1=smb.SMB.FLAGS1_PATHCASELESS | smb.SMB.FLAGS1_CANONICALIZED_PATHS,
                 flags2=smb.SMB.FLAGS2_EXTENDED_SECURITY | smb.SMB.FLAGS2_NT_STATUS | smb.SMB.FLAGS2_LONG_NAMES # Make sure this does not contain SMB_FLAGS2_SMB_SECURITY_SIGNATURE
                 negoData='\x02NT LM 0.12\x00\x02SMB 2.002\x00\x02SMB 2.???\x00'
@@ -57,29 +62,42 @@ class AuditTarget:
                 if negResp.fields['SecurityMode'] & SMB2_NEGOTIATE_SIGNING_REQUIRED == SMB2_NEGOTIATE_SIGNING_REQUIRED:
                     self.SigningRequired = True
 
+            #Neat Trick, It is okay if the login fails, as we only need to get the NTLMSSP AV data from the server NTLMSSP Challenge
+            try:
+                smbconn.login(user="",password="")
+            except Exception as e:
+                if "STATUS_NOT_SUPPORTED" in str(e):
+                    self.NTLMSupport = False
+                pass
             self.DNSName = smbconn.getServerDNSHostName()
             self.DNSDomain = smbconn.getServerDNSDomainName()
-
             self.NBDomain = smbconn.getServerDomain()
             self.NBName = smbconn.getServerName()
 
-            #Supports SMB Signing
-            # smbconnection._SignatureVerificationEnabled
-            self.SigningSupported = smbconn._SMBConnection._SignatureVerificationEnabled
-
-
-
-        except AttributeError as d:
-            print("Bad Attribute")
         except Exception as e:
+            
+                # no ntlm supported
+                
             print("Something failed")
             print(e)
             pass
 
+    def test_dialects(self):
+        DialectsList = [smb.SMB_DIALECT, SMB2_DIALECT_002, SMB2_DIALECT_21,SMB2_DIALECT_30, SMB2_DIALECT_311]
+
+        for i in DialectsList:
+            try:
+                smbconn = SMBConnection(remoteHost=self.TargetIP,remoteName=self.TargetIP,preferredDialect=i)
+                self.SupportedSMBDilects.append(i)
+            except:
+                continue
+
+
+
     
 
 def main():
-    smbtarget = "192.168.1.24"
+    smbtarget = "192.168.1.204"
 
     """ try:
         smbv2_test = SMBConnection(remoteHost=smbtarget,remoteName=smbtarget)
@@ -93,6 +111,8 @@ def main():
 
     t = AuditTarget(smbtarget)
     t.negotiatie()
+    t.test_dialects()
+    t.print()
     print(t)
 
     
